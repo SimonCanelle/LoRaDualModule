@@ -38,8 +38,8 @@
 ////// configuration
 
 ///activer le define pour la bonne plateforme
-//#define gcs 
-#define drone
+#define gcs 
+//#define drone
 
 
 #ifdef drone
@@ -110,6 +110,7 @@ void printParameters(struct Configuration configuration);
 void printModuleInformation(struct ModuleInformation moduleInformation);
 void configureSender();
 void configureReceiver();
+void blink(unsigned int num);
 
 
 // the setup function runs once when you press reset or power the board
@@ -117,43 +118,69 @@ void setup() {
   pinMode(PB2, OUTPUT);
   digitalWrite(PB2, HIGH);
   delay(1000);
-  digitalWrite(PB2, LOW);
-
-  SerialCOM.setTimeout(5);
-  SerialCOM.begin(57600);
-  while(!SerialCOM);
-  SerialCOM.println("USB connection initialised");
-  delay(500);
+  digitalWrite(PB2, LOW);  
 
   configureSender();
   delay(500);
   configureReceiver();
   delay(500); 
+
+  blink(2);
+
+  SerialCOM.setTimeout(5);
+  SerialCOM.begin(57600);
+  while(!SerialCOM);
+  SerialCOM.println("USB connection initialised");
+  //blink 3 times fast to show connexion initialised
+  digitalWrite(PB2, HIGH);
+  delay(100);
+  digitalWrite(PB2, LOW); 
+  delay(100); 
+  digitalWrite(PB2, HIGH);
+  delay(100);
+  digitalWrite(PB2, LOW); 
+  delay(100); 
+  digitalWrite(PB2, HIGH);
+  delay(100);
+  digitalWrite(PB2, LOW); 
 }
 
 ResponseStatus rsSend;
 ResponseContainer rsReic;
 char InputBuffer[512];
 int numBytes = 0;
+double timerNow = 0;
+double timerFlush = 0;
 // the loop function runs over and over again forever
 void loop() {
-  if (SerialCOM.available()>0){
-    digitalWrite(PB2, HIGH); 
+  timerNow = millis();
+  if(SerialCOM)
+  {
+    if (SerialCOM.available()>0){
+      digitalWrite(PB2, HIGH); 
 
-    numBytes = SerialCOM.readBytes(InputBuffer, 512); 
-    rsSend = radioTX.sendFixedMessage(REICADDH,REICADDL,SENDCHAN, &InputBuffer, numBytes);
-    
-    digitalWrite(PB2, LOW);
+      numBytes = SerialCOM.readBytes(InputBuffer, 512); 
+      rsSend = radioTX.sendFixedMessage(SENDDESH,SENDDESL,SENDCHAN, &InputBuffer, numBytes);
+      
+      digitalWrite(PB2, LOW);
+    }
+
+    if(radioRX.available()>0){
+      digitalWrite(PB2, HIGH);
+
+      rsReic = radioRX.receiveMessage();
+      SerialCOM.print(rsReic.data);
+
+      digitalWrite(PB2, LOW);
+    }
   }
-
-  if(radioRX.available()>0){
-    digitalWrite(PB2, HIGH);
-
-    rsReic = radioRX.receiveMessage();
-		SerialCOM.print(rsReic.data);
-
-    digitalWrite(PB2, LOW);
-  }
+  //flush every second to not overflow the buffer if the upstream is down
+  //else if (!SerialCOM && timerNow - timerFlush >= 1000)
+  //{
+    //timerFlush = timerNow;
+    //radioRX.cleanUARTBuffer();
+    //radioTX.cleanUARTBuffer();
+  //}
 }
 
 void configureSender(){
@@ -164,8 +191,8 @@ void configureSender(){
 	c = radioTX.getConfiguration();
 	// It's important get configuration pointer before all other operation
 	Configuration configuration = *(Configuration*) c.data;
-	SerialCOM.println(c.status.getResponseDescription());
-	SerialCOM.println(c.status.code);
+	//SerialCOM.println(c.status.getResponseDescription());
+	//SerialCOM.println(c.status.code);
 
 	configuration.ADDL = SENDADDL;
 	configuration.ADDH = SENDADDH;
@@ -183,9 +210,9 @@ void configureSender(){
 
 	// Set configuration changed and set to not hold the configuration
 	ResponseStatus rs = radioTX.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
-	SerialCOM.println(rs.getResponseDescription());
-	SerialCOM.println(rs.code);
-	printParameters(configuration);
+	//SerialCOM.println(rs.getResponseDescription());
+	//SerialCOM.println(rs.code);
+	//printParameters(configuration);
 	c.close();
   
   //needed to set device in different baudrate
@@ -203,12 +230,12 @@ void configureReceiver(){
 	c = radioRX.getConfiguration();
 	// It's important get configuration pointer before all other operation
 	Configuration configuration = *(Configuration*) c.data;
-	SerialCOM.println(c.status.getResponseDescription());
-	SerialCOM.println(c.status.code);
+	//SerialCOM.println(c.status.getResponseDescription());
+	//SerialCOM.println(c.status.code);
 
 	configuration.ADDL = REICADDL;
 	configuration.ADDH = REICADDH;
-	configuration.CHAN = SENDCHAN;//TODO : change for REICCHAN after test
+	configuration.CHAN = REICCHAN;//TODO : change for REICCHAN after test
 
 	configuration.OPTION.fec = FEC_1_ON;
 	configuration.OPTION.fixedTransmission = FT_FIXED_TRANSMISSION;
@@ -222,9 +249,9 @@ void configureReceiver(){
 
 	// Set configuration changed and set to not hold the configuration
 	ResponseStatus rs = radioRX.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
-	SerialCOM.println(rs.getResponseDescription());
-	SerialCOM.println(rs.code);
-	printParameters(configuration);
+	//SerialCOM.println(rs.getResponseDescription());
+	//SerialCOM.println(rs.code);
+	//printParameters(configuration);
 	c.close();
 
   //needed to set device in different baudrate
@@ -255,6 +282,16 @@ void printParameters(struct Configuration configuration) {
 
 	SerialCOM.println("----------------------------------------");
 
+}
+
+//blocking blink
+void blink(unsigned int num){
+  for (int i=0; i<num;i++){
+    digitalWrite(PB2, HIGH);
+    delay(500);
+    digitalWrite(PB2, LOW);
+    delay(200);
+  }
 }
 
 
