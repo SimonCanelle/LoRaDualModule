@@ -38,8 +38,8 @@
 ////// configuration
 
 ///activer le define pour la bonne plateforme
-#define gcs 
-//#define drone
+//#define gcs 
+#define drone
 
 
 #ifdef drone
@@ -96,8 +96,8 @@
 
 //LoRa_E32 radio(&HWserial, aux, m0, m1, baud)
 
-#define SerialCOM SerialUSB
-//HardwareSerial SerialCOM(USART1);
+//#define SerialCOM SerialUSB
+HardwareSerial SerialCOM(USART1);
 
 
 HardwareSerial serialRX(USART2);
@@ -116,21 +116,17 @@ void blink(unsigned int num);
 // the setup function runs once when you press reset or power the board
 void setup() {
   pinMode(PB2, OUTPUT);
-  digitalWrite(PB2, HIGH);
-  delay(1000);
-  digitalWrite(PB2, LOW);  
+  blink(1);
 
-  configureSender();
-  delay(500);
-  configureReceiver();
-  delay(500); 
+  SerialCOM.setTimeout(10);
+  SerialCOM.begin(19200);
+  SerialCOM.println("Serial connection initialised");  
 
   blink(2);
 
-  SerialCOM.setTimeout(5);
-  SerialCOM.begin(57600);
-  while(!SerialCOM);
-  SerialCOM.println("USB connection initialised");
+  configureSender();
+  configureReceiver();
+  
   //blink 3 times fast to show connexion initialised
   digitalWrite(PB2, HIGH);
   delay(100);
@@ -149,11 +145,11 @@ ResponseStatus rsSend;
 ResponseContainer rsReic;
 char InputBuffer[512];
 int numBytes = 0;
-double timerNow = 0;
-double timerFlush = 0;
+//double timerNow = 0;
+//double timerFlush = 0;
 // the loop function runs over and over again forever
 void loop() {
-  timerNow = millis();
+  //timerNow = millis();
   if(SerialCOM)
   {
     if (SerialCOM.available()>0){
@@ -191,8 +187,8 @@ void configureSender(){
 	c = radioTX.getConfiguration();
 	// It's important get configuration pointer before all other operation
 	Configuration configuration = *(Configuration*) c.data;
-	//SerialCOM.println(c.status.getResponseDescription());
-	//SerialCOM.println(c.status.code);
+	SerialCOM.println(c.status.getResponseDescription());
+	SerialCOM.println(c.status.code);
 
 	configuration.ADDL = SENDADDL;
 	configuration.ADDH = SENDADDH;
@@ -204,22 +200,23 @@ void configureSender(){
 	configuration.OPTION.transmissionPower = POWER_20;
 	configuration.OPTION.wirelessWakeupTime = WAKE_UP_1250;
 
-	configuration.SPED.airDataRate = AIR_DATA_RATE_011_48;
-	configuration.SPED.uartBaudRate = UART_BPS_57600;
+	configuration.SPED.airDataRate = AIR_DATA_RATE_101_192;
+	configuration.SPED.uartBaudRate = UART_BPS_19200;
 	configuration.SPED.uartParity = MODE_00_8N1;
 
 	// Set configuration changed and set to not hold the configuration
 	ResponseStatus rs = radioTX.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
-	//SerialCOM.println(rs.getResponseDescription());
-	//SerialCOM.println(rs.code);
-	//printParameters(configuration);
+	SerialCOM.println(rs.getResponseDescription());
+	SerialCOM.println(rs.code);
+	printParameters(configuration);
 	c.close();
   
   //needed to set device in different baudrate
   radioTX.resetModule();
   delay(500);
-  radioTX = LoRa_E32(&serialTX, PB7, PB6, PB5, UART_BPS_RATE_57600);
+  radioTX = LoRa_E32(&serialTX, PB7, PB6, PB5, UART_BPS_RATE_19200);
   radioTX.begin();
+  serialTX.setTimeout(100);
 }
 
 void configureReceiver(){
@@ -230,8 +227,8 @@ void configureReceiver(){
 	c = radioRX.getConfiguration();
 	// It's important get configuration pointer before all other operation
 	Configuration configuration = *(Configuration*) c.data;
-	//SerialCOM.println(c.status.getResponseDescription());
-	//SerialCOM.println(c.status.code);
+	SerialCOM.println(c.status.getResponseDescription());
+	SerialCOM.println(c.status.code);
 
 	configuration.ADDL = REICADDL;
 	configuration.ADDH = REICADDH;
@@ -243,22 +240,23 @@ void configureReceiver(){
 	configuration.OPTION.transmissionPower = POWER_20;
 	configuration.OPTION.wirelessWakeupTime = WAKE_UP_1250;
 
-	configuration.SPED.airDataRate = AIR_DATA_RATE_011_48;
-	configuration.SPED.uartBaudRate = UART_BPS_57600;
+	configuration.SPED.airDataRate = AIR_DATA_RATE_101_192;
+	configuration.SPED.uartBaudRate = UART_BPS_19200;
 	configuration.SPED.uartParity = MODE_00_8N1;
 
 	// Set configuration changed and set to not hold the configuration
 	ResponseStatus rs = radioRX.setConfiguration(configuration, WRITE_CFG_PWR_DWN_SAVE);
-	//SerialCOM.println(rs.getResponseDescription());
-	//SerialCOM.println(rs.code);
-	//printParameters(configuration);
+	SerialCOM.println(rs.getResponseDescription());
+	SerialCOM.println(rs.code);
+	printParameters(configuration);
 	c.close();
 
   //needed to set device in different baudrate
   radioRX.resetModule();
   delay(500);
-  radioRX = LoRa_E32(&serialRX, PA5, PA6, PA7, UART_BPS_RATE_57600);
+  radioRX = LoRa_E32(&serialRX, PA5, PA6, PA7, UART_BPS_RATE_19200);
   radioRX.begin();
+  serialRX.setTimeout(100);
 }
 
 void printParameters(struct Configuration configuration) {
