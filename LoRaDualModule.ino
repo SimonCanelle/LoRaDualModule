@@ -96,14 +96,21 @@
 
 //LoRa_E32 radio(&HWserial, aux, m0, m1, baud)
 
+typedef enum {
+  waiting,
+  mav1_payload,
+  mav1_frame,
+  mav2_payload,
+  mav2_frame
+  }frame_state;
+
 //#define SerialCOM SerialUSB
 HardwareSerial SerialCOM(USART1);
 
-
 HardwareSerial serialRX(USART2);
-LoRa_E32 radioRX(&serialRX, PA5, PA6, PA7, UART_BPS_RATE_9600);
+LoRa_E32 radioRX(&serialRX, PA5, PA6, PA7, UART_BPS_RATE_57600);
 HardwareSerial serialTX(USART3);
-LoRa_E32 radioTX(&serialTX, PB7, PB6, PB5, UART_BPS_RATE_9600);
+LoRa_E32 radioTX(&serialTX, PB7, PB6, PB5, UART_BPS_RATE_57600);
 
 
 void printParameters(struct Configuration configuration);
@@ -112,6 +119,14 @@ void configureSender();
 void configureReceiver();
 void blink(unsigned int num);
 
+ResponseStatus rsSend;
+ResponseContainer rsReic;
+char OutputBuffer[512];
+int numBytesToSend = 0;
+char InputBuffer[512];
+int numBytesInBuff = 0;
+int frameSize = 0;
+frame_state frameSM = frame_state::waiting;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -119,7 +134,7 @@ void setup() {
   blink(1);
 
   SerialCOM.setTimeout(10);
-  SerialCOM.begin(19200);
+  SerialCOM.begin(57600);
   SerialCOM.println("Serial connection initialised");  
 
   blink(2);
@@ -141,10 +156,6 @@ void setup() {
   digitalWrite(PB2, LOW); 
 }
 
-ResponseStatus rsSend;
-ResponseContainer rsReic;
-char InputBuffer[512];
-int numBytes = 0;
 //double timerNow = 0;
 //double timerFlush = 0;
 // the loop function runs over and over again forever
@@ -155,8 +166,8 @@ void loop() {
     if (SerialCOM.available()>0){
       digitalWrite(PB2, HIGH); 
 
-      numBytes = SerialCOM.readBytes(InputBuffer, 512); 
-      rsSend = radioTX.sendFixedMessage(SENDDESH,SENDDESL,SENDCHAN, &InputBuffer, numBytes);
+      numBytesToSend = SerialCOM.readBytes(OutputBuffer, 512); 
+      rsSend = radioTX.sendFixedMessage(SENDDESH,SENDDESL,SENDCHAN, &OutputBuffer, numBytesToSend);
       
       digitalWrite(PB2, LOW);
     }
@@ -165,18 +176,77 @@ void loop() {
       digitalWrite(PB2, HIGH);
 
       rsReic = radioRX.receiveMessage();
-      SerialCOM.print(rsReic.data);
+
+      strcpy(&InputBuffer[numBytesInBuff], rsReic.data.c_str());
+      numBytesInBuff += rsReic.data.length();
+      //SerialCOM.print(rsReic.data);
 
       digitalWrite(PB2, LOW);
     }
+
+    switch(frameSM)
+    {
+      case frame_state::waiting :
+        if (numBytesInBuff > 0)
+        {
+          if (InputBuffer[0] == 0xFE)
+          {
+            frameSM = frame_state::mav1_payload;
+          }
+          else if (InputBuffer[0] == 0xFD)
+          {
+            frameSM = frame_state::mav2_payload;
+          }
+          else
+          {
+            memcpy(&InputBuffer[0], &InputBuffer[1], 511); //shift all buffer
+          }
+        }
+        break;
+
+      case frame_state::mav1_payload :
+        if (numBytesInBuff > 1) //wait for payload length byte
+        {
+          frameSize = 8 + InputBuffer[1];
+          frameSM = frame_state::mav1_frame;
+        }
+        break;
+
+      case frame_state::mav2_payload :
+        if (numBytesInBuff > 1) //wait for payload length byte
+        {
+          frameSize = 12 + InputBuffer[1];
+          frameSM = frame_state::mav2_frame;
+        }
+        break;
+
+      case frame_state::mav1_frame :
+        if (numBytesInBuff >= frameSize) //wait for full message
+        {
+          SerialCOM.write(InputBuffer, frameSize);
+
+          //shift and updagte size
+          memcpy(&InputBuffer[0], &InputBuffer[frameSize], numBytesInBuff-frameSize);
+          numBytesInBuff -= frameSize;
+
+          frameSM = frame_state::waiting;          
+        }
+        break;
+
+      case frame_state::mav2_frame :
+        if (numBytesInBuff >= frameSize) //wait for full message
+        {
+          SerialCOM.write(InputBuffer, frameSize);
+
+          //shift and updagte size
+          memcpy(&InputBuffer[0], &InputBuffer[frameSize], numBytesInBuff-frameSize);
+          numBytesInBuff -= frameSize;
+
+          frameSM = frame_state::waiting;
+        }
+        break;
+    } 
   }
-  //flush every second to not overflow the buffer if the upstream is down
-  //else if (!SerialCOM && timerNow - timerFlush >= 1000)
-  //{
-    //timerFlush = timerNow;
-    //radioRX.cleanUARTBuffer();
-    //radioTX.cleanUARTBuffer();
-  //}
 }
 
 void configureSender(){
@@ -201,7 +271,7 @@ void configureSender(){
 	configuration.OPTION.wirelessWakeupTime = WAKE_UP_1250;
 
 	configuration.SPED.airDataRate = AIR_DATA_RATE_101_192;
-	configuration.SPED.uartBaudRate = UART_BPS_19200;
+	configuration.SPED.uartBaudRate = UART_BPS_57600;
 	configuration.SPED.uartParity = MODE_00_8N1;
 
 	// Set configuration changed and set to not hold the configuration
@@ -214,7 +284,7 @@ void configureSender(){
   //needed to set device in different baudrate
   radioTX.resetModule();
   delay(500);
-  radioTX = LoRa_E32(&serialTX, PB7, PB6, PB5, UART_BPS_RATE_19200);
+  radioTX = LoRa_E32(&serialTX, PB7, PB6, PB5, UART_BPS_RATE_57600);
   radioTX.begin();
   serialTX.setTimeout(100);
 }
@@ -241,7 +311,7 @@ void configureReceiver(){
 	configuration.OPTION.wirelessWakeupTime = WAKE_UP_1250;
 
 	configuration.SPED.airDataRate = AIR_DATA_RATE_101_192;
-	configuration.SPED.uartBaudRate = UART_BPS_19200;
+	configuration.SPED.uartBaudRate = UART_BPS_57600;
 	configuration.SPED.uartParity = MODE_00_8N1;
 
 	// Set configuration changed and set to not hold the configuration
@@ -254,9 +324,9 @@ void configureReceiver(){
   //needed to set device in different baudrate
   radioRX.resetModule();
   delay(500);
-  radioRX = LoRa_E32(&serialRX, PA5, PA6, PA7, UART_BPS_RATE_19200);
+  radioRX = LoRa_E32(&serialRX, PA5, PA6, PA7, UART_BPS_RATE_57600);
   radioRX.begin();
-  serialRX.setTimeout(100);
+  serialRX.setTimeout(10);
 }
 
 void printParameters(struct Configuration configuration) {
